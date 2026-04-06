@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQL Tracker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      width: 280px;
+      padding: 16px;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+    h1 { font-size: 15px; margin-bottom: 12px; color: #58a6ff; }
+    .status { font-size: 13px; margin-bottom: 12px; color: #8b949e; }
+    .status span { color: #3fb950; font-weight: 600; }
+    .status span.error { color: #f85149; }
+    button {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    #btn-auth { background: #238636; color: #fff; }
+    #btn-logout { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    #auth-steps {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      display: none;
+    }
+    #auth-steps a { color: #58a6ff; }
+    #user-code {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: #f0f6fc;
+      margin: 8px 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🗄 SQL Practice Tracker</h1>
+  <div class="status" id="status">Checking...</div>
+
+  <div id="auth-steps">
+    <p>1. Go to <a id="verify-link" href="#" target="_blank">github.com/login/device</a></p>
+    <p>2. Enter this code:</p>
+    <div id="user-code"></div>
+    <p>3. Authorize on your phone or browser</p>
+    <p style="color:#8b949e; margin-top:8px;">Waiting for authorization...</p>
+  </div>
+
+  <button id="btn-auth">Connect GitHub</button>
+  <button id="btn-logout" style="display:none">Disconnect</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

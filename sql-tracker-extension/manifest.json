@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "SQL Practice Tracker",
+  "version": "1.0.0",
+  "description": "Saves solved SQL practice problems to GitHub",
+  "permissions": [
+    "storage",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://www.hackerrank.com/*",
+    "https://sqlzoo.net/*",
+    "https://www.sql-practice.com/*",
+    "https://api.github.com/*",
+    "https://github.com/*",
+    "http://127.0.0.1:9876/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content/common.js", "content/leetcode.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.hackerrank.com/challenges/*"],
+      "js": ["content/common.js", "content/hackerrank.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://sqlzoo.net/*"],
+      "js": ["content/common.js", "content/sqlzoo.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.sql-practice.com/*"],
+      "js": ["content/common.js", "content/sqlpractice.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "128": "icons/icon.svg"
+  }
+}

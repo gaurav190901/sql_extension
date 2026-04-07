@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SQL Practice Tracker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Saves solved SQL practice problems to GitHub",
   "permissions": [
     "storage",
@@ -12,6 +12,9 @@
     "https://www.hackerrank.com/*",
     "https://sqlzoo.net/*",
     "https://www.sql-practice.com/*",
+    "https://sqlfiddle.com/*",
+    "https://www.db-fiddle.com/*",
+    "https://platform.stratascratch.com/*",
     "https://api.github.com/*",
     "https://github.com/*",
     "http://127.0.0.1:9876/*"
@@ -42,6 +45,21 @@
     {
       "matches": ["https://www.sql-practice.com/*"],
       "js": ["content/common.js", "content/sqlpractice.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://sqlfiddle.com/*"],
+      "js": ["content/common.js", "content/sqlfiddle.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.db-fiddle.com/*"],
+      "js": ["content/common.js", "content/dbfiddle.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://platform.stratascratch.com/coding*"],
+      "js": ["content/common.js", "content/stratascratch.js"],
       "run_at": "document_idle"
     }
   ],

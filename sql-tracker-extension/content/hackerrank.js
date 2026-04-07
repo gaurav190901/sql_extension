@@ -1,6 +1,7 @@
 // HackerRank: detect accepted submission
 (function () {
   const PLATFORM = "hackerrank";
+  let saved = false;
 
   function getProblemName() {
     const match = location.pathname.match(/\/challenges\/([^/]+)/);
@@ -8,19 +9,20 @@
   }
 
   function getSQL() {
-    // CodeMirror
-    const lines = document.querySelectorAll(".CodeMirror-line");
-    if (lines.length) return Array.from(lines).map((l) => l.textContent).join("\n");
+    // HackerRank uses CodeMirror — grab instance directly
+    const sql = getCodeMirrorValue();
+    if (sql.trim()) return sql;
     return "";
   }
 
   const observer = new MutationObserver(() => {
-    // HackerRank shows a success tick / "Congratulations" on accepted
-    const success = document.querySelector(".result-state-accepted, .challenge-success-message");
+    if (saved) return;
+    const success = document.querySelector(".result-state-accepted, .challenge-success-message, [class*='statusAccepted']");
     if (success) {
       const sql = getSQL();
       const name = getProblemName();
-      if (sql) {
+      if (sql.trim()) {
+        saved = true;
         submitSolution(PLATFORM, name, sql);
         observer.disconnect();
       }

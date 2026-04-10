@@ -1,7 +1,7 @@
 -- Problem : employee-bonus
 -- Platform: leetcode
 -- URL     : 
--- Solved  : 2026-04-10T10:17:44.985Z
+-- Solved  : 2026-04-10T10:18:37.900Z
 --
 
 # Write your MySQL query statement below

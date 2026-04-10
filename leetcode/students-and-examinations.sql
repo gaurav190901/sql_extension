@@ -1,7 +1,7 @@
 -- Problem : students-and-examinations
 -- Platform: leetcode
 -- URL     : 
--- Solved  : 2026-04-10T10:12:51.125Z
+-- Solved  : 2026-04-10T10:19:02.703Z
 --
 
 select 

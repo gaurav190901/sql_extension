@@ -1,98 +1,147 @@
 const statusEl = document.getElementById("status");
-const btnAuth = document.getElementById("btn-auth");
+const sectionToken = document.getElementById("section-token");
+const sectionConnected = document.getElementById("section-connected");
+const inputToken = document.getElementById("input-token");
+const btnSaveToken = document.getElementById("btn-save-token");
 const btnLogout = document.getElementById("btn-logout");
-const authSteps = document.getElementById("auth-steps");
-const userCodeEl = document.getElementById("user-code");
-const verifyLink = document.getElementById("verify-link");
+const destinationsEl = document.getElementById("destinations");
+const btnAddDest = document.getElementById("btn-add-dest");
+const btnSaveDests = document.getElementById("btn-save-dests");
+const savedMsg = document.getElementById("saved-msg");
+const historyEl = document.getElementById("history");
 
-function setStatus(text, isError = false) {
-  statusEl.innerHTML = isError
-    ? `<span class="error">${text}</span>`
-    : text;
-}
+const DEST_RE = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+(\/[^\s]+)*\/?$/;
 
-function showAuthenticated() {
-  setStatus('Status: <span>Connected to GitHub</span>');
-  btnAuth.style.display = "none";
-  btnLogout.style.display = "block";
-  authSteps.style.display = "none";
-}
-
-function showUnauthenticated() {
-  setStatus("Status: Not connected");
-  btnAuth.style.display = "block";
-  btnLogout.style.display = "none";
-  authSteps.style.display = "none";
-}
-
-// Check current auth state on open
-chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" }, (res) => {
-  if (res.authenticated) {
-    showAuthenticated();
-  } else if (res.pendingAuth) {
-    showPendingAuth(res.pendingAuth);
-  } else {
-    showUnauthenticated();
+function setStatus(text, { error = false, highlight = "" } = {}) {
+  statusEl.textContent = text;
+  if (highlight) {
+    const span = document.createElement("span");
+    span.textContent = highlight;
+    if (error) span.className = "error";
+    statusEl.appendChild(span);
   }
+}
+
+function showConnected(login) {
+  setStatus("Status: ", { highlight: login ? `Connected as @${login}` : "Connected to GitHub" });
+  sectionToken.style.display = "none";
+  sectionConnected.style.display = "block";
+}
+
+function showDisconnected(error) {
+  if (error) setStatus("Status: ", { error: true, highlight: error });
+  else setStatus("Status: Not connected");
+  sectionToken.style.display = "block";
+  sectionConnected.style.display = "none";
+}
+
+function flash(text, isError = false) {
+  savedMsg.textContent = text;
+  savedMsg.classList.toggle("error", isError);
+  savedMsg.style.display = "block";
+  setTimeout(() => (savedMsg.style.display = "none"), 2500);
+}
+
+function addDestRow(value = "") {
+  const row = document.createElement("div");
+  row.className = "dest-row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "owner/repo or owner/repo/folder";
+  input.value = value;
+  input.addEventListener("input", () => input.classList.remove("invalid"));
+
+  const remove = document.createElement("button");
+  remove.title = "Remove";
+  remove.textContent = "✕";
+  remove.addEventListener("click", () => row.remove());
+
+  row.append(input, remove);
+  destinationsEl.appendChild(row);
+}
+
+function renderHistory(history) {
+  historyEl.replaceChildren();
+  if (!history.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Nothing saved yet.";
+    historyEl.appendChild(li);
+    return;
+  }
+  for (const h of history.slice(0, 10)) {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.textContent = h.problemName;
+    a.title = h.problemName;
+    if (/^https:\/\//.test(h.url || "")) {
+      a.href = h.url;
+      a.target = "_blank";
+    }
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = `${h.platform} · ${new Date(h.solvedAt).toLocaleDateString()}`;
+    li.append(a, meta);
+    historyEl.appendChild(li);
+  }
+}
+
+// ---------- Init ----------
+
+chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" }, (res) => {
+  if (res?.authenticated) showConnected(res.login);
+  else showDisconnected();
 });
 
-function showPendingAuth(device) {
-  setStatus("Waiting for GitHub authorization...");
-  userCodeEl.textContent = device.user_code;
-  verifyLink.href = device.verification_uri;
-  verifyLink.textContent = device.verification_uri;
-  authSteps.style.display = "block";
-  btnAuth.style.display = "none";
-}
+chrome.storage.local.get("destinations", (data) => {
+  const dests = data.destinations || [];
+  if (dests.length) dests.forEach((d) => addDestRow(d));
+  else addDestRow();
+});
 
-btnAuth.addEventListener("click", () => {
-  setStatus("Starting authorization...");
-  btnAuth.disabled = true;
-  chrome.runtime.sendMessage({ type: "START_AUTH" }, (res) => {
-    btnAuth.disabled = false;
+chrome.runtime.sendMessage({ type: "GET_HISTORY" }, (res) => renderHistory(res?.history || []));
+
+// ---------- Events ----------
+
+btnSaveToken.addEventListener("click", () => {
+  const token = inputToken.value.trim();
+  if (!token) { showDisconnected("Please enter a token"); return; }
+  btnSaveToken.disabled = true;
+  setStatus("Verifying token…");
+  chrome.runtime.sendMessage({ type: "SAVE_TOKEN", token }, (res) => {
+    btnSaveToken.disabled = false;
     if (res?.ok) {
-      showPendingAuth({ user_code: res.userCode, verification_uri: res.verificationUri });
+      inputToken.value = "";
+      showConnected(res.login);
     } else {
-      setStatus(`Error: ${res?.error || "Failed to start auth"}`, true);
+      showDisconnected(res?.error || "Could not verify token");
     }
   });
 });
 
 btnLogout.addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "LOGOUT" }, () => showUnauthenticated());
+  chrome.runtime.sendMessage({ type: "LOGOUT" }, () => showDisconnected());
 });
 
-// Listen for auth completion from background
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "AUTH_COMPLETE") showAuthenticated();
-});
+btnAddDest.addEventListener("click", () => addDestRow());
 
-// --- Settings ---
-const inputOwner = document.getElementById("input-owner");
-const inputRepo = document.getElementById("input-repo");
-const inputFolder = document.getElementById("input-folder");
-const btnSaveSettings = document.getElementById("btn-save-settings");
-const settingsSaved = document.getElementById("settings-saved");
-
-// Load saved settings on open
-chrome.storage.local.get(["repoOwner", "repoName", "repoFolder"], (data) => {
-  if (data.repoOwner) inputOwner.value = data.repoOwner;
-  if (data.repoName) inputRepo.value = data.repoName;
-  if (data.repoFolder) inputFolder.value = data.repoFolder;
-});
-
-btnSaveSettings.addEventListener("click", () => {
-  const owner = inputOwner.value.trim();
-  const repo = inputRepo.value.trim();
-  const folder = inputFolder.value.trim();
-  if (!owner || !repo) {
-    setStatus("Username and repo name are required", true);
-    return;
+btnSaveDests.addEventListener("click", () => {
+  const inputs = Array.from(destinationsEl.querySelectorAll("input"));
+  let valid = true;
+  const dests = [];
+  for (const input of inputs) {
+    const v = input.value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/+$/, "");
+    if (!v) continue;
+    if (!DEST_RE.test(v)) {
+      input.classList.add("invalid");
+      valid = false;
+    } else {
+      input.value = v;
+      dests.push(v);
+    }
   }
-  chrome.storage.local.set({ repoOwner: owner, repoName: repo, repoFolder: folder }, () => {
-    settingsSaved.style.display = "block";
-    setTimeout(() => (settingsSaved.style.display = "none"), 2000);
-    // Notify background to pick up new settings
-    chrome.runtime.sendMessage({ type: "UPDATE_SETTINGS", owner, repo, folder });
-  });
+  if (!valid) { flash("Use the format owner/repo or owner/repo/folder", true); return; }
+  if (!dests.length) { flash("Add at least one destination", true); return; }
+  chrome.storage.local.set({ destinations: dests }, () => flash("✓ Saved"));
 });

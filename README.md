@@ -1,188 +1,111 @@
-# sql_extension
 # SQL Practice Tracker — Browser Extension
 
-Automatically saves your solved SQL problems to a GitHub repo, organized by platform and problem name. Each saved file includes metadata (problem URL, date solved) as a comment header.
+Automatically saves your accepted SQL solutions to a GitHub repo, organized by platform and problem name. Each file gets a metadata header (problem, platform, URL, date solved).
 
 ---
 
 ## Platform Compatibility
 
-| Platform | URL | Auto-detect Accepted | Editor Type | Notes |
-|---|---|---|---|---|
-| LeetCode | leetcode.com/problems | ✅ | Monaco | Watches for "Accepted" result banner |
-| HackerRank | hackerrank.com/challenges | ✅ | CodeMirror | Watches for success state element |
-| SQLZoo | sqlzoo.net | ✅ | CodeMirror / Textarea | Watches for "Correct" answer indicator |
-| sql-practice.com | sql-practice.com | ✅ | CodeMirror | Watches for correct answer element |
-| SQLFiddle | sqlfiddle.com | ✅ | CodeMirror | Saves when result table appears |
-| DB Fiddle | db-fiddle.com | ✅ | CodeMirror | Saves when result table appears |
-| StrataScratch | platform.stratascratch.com | ✅ | Monaco | Watches for correct/passed indicator |
-
-> SQLFiddle and DB Fiddle don't have "problems" — saves are named by page title or timestamp.
-
----
+| Platform | Status | How it's detected |
+|---|---|---|
+| LeetCode | ✅ Enabled | Captures the exact code from LeetCode's submit/check requests when the result is **Accepted**; falls back to the result banner. Only SQL languages (MySQL, MS SQL, Oracle, PostgreSQL) are saved. |
+| HackerRank | ✅ Enabled | Saves when the success ("congrats") panel appears. Non-SQL languages are skipped. |
+| SQLZoo, sql-practice.com, StrataScratch, DB Fiddle, SQLFiddle | 🚧 Not enabled | Draft scripts exist in `content/` but are not registered in `manifest.json` yet. |
 
 ## Browser Compatibility
 
 | Browser | Supported | Notes |
 |---|---|---|
-| Chrome | ✅ | Fully supported (Manifest V3) |
-| Edge | ✅ | Chromium-based, same as Chrome |
-| Firefox | ⚠️ | Load as temporary add-on via `about:debugging` |
-| Safari | ❌ | Not supported |
+| Chrome 111+ | ✅ | Manifest V3 |
+| Edge 111+ | ✅ | Chromium-based |
+| Firefox 128+ | ⚠️ | Load as a temporary add-on via `about:debugging` (removed on restart) |
+| Safari | ❌ | |
 
 ---
 
-## Prerequisites
+## Setup
 
-- Node.js (to run the proxy server)
-- A GitHub account
-- Chrome, Edge, or Firefox browser
+### 1. Create a repo for your solutions
 
----
+Create a GitHub repo (public or private), e.g. `sql-practice-solutions`. Keep it separate from this extension's source code.
 
-## Setup Guide
+### 2. Create a fine-grained token
 
-### Step 1 — Create a GitHub OAuth App
+1. Go to [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+2. **Repository access** → *Only select repositories* → pick your solutions repo
+3. **Permissions** → Repository permissions → **Contents: Read and write**
+4. Generate and copy the token
 
-1. Go to [github.com/settings/developers](https://github.com/settings/developers)
-2. Click "New OAuth App"
-3. Fill in the fields:
-   - **Application name**: SQL Practice Tracker
-   - **Homepage URL**: `https://github.com`
-   - **Authorization callback URL**: `https://github.com`
-4. Check the **Enable Device Flow** checkbox
-5. Click "Register application"
-6. Copy the **Client ID** shown on the next page
+### 3. Load the extension
 
-### Step 2 — Add your Client ID to the extension
+**Chrome / Edge:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select the `sql-tracker-extension` folder.
 
-Open `background.js` and replace the placeholder:
+**Firefox:** `about:debugging` → *This Firefox* → *Load Temporary Add-on* → select `sql-tracker-extension/manifest.json`.
 
-```js
-const GITHUB_CLIENT_ID = "YOUR_GITHUB_CLIENT_ID";
-```
+### 4. Configure
 
-> ⚠️ Keep your Client ID private. Do not commit it to a public repo.
-
-### Step 3 — Start the proxy server
-
-The proxy is a small local Node.js server that handles GitHub OAuth on behalf of the extension (browser extensions can't hit `github.com/login/device` directly due to CORS restrictions).
-
-```bash
-node proxy/server.js
-```
-
-Expected output:
-```
-✓ GitHub auth proxy running at http://127.0.0.1:9876
-  Health check: http://127.0.0.1:9876/health
-```
-
-> You need to keep this running whenever you use the extension. If it's not running, the popup will show a clear error with the command to start it.
-
-### Step 4 — Load the extension in your browser
-
-**Chrome / Edge:**
-1. Go to `chrome://extensions`
-2. Toggle on "Developer mode" (top right)
-3. Click "Load unpacked"
-4. Select the `sql-tracker-extension` folder
-5. The extension icon will appear in your toolbar
-
-**Firefox:**
-1. Go to `about:debugging`
-2. Click "This Firefox"
-3. Click "Load Temporary Add-on"
-4. Select the `manifest.json` file inside `sql-tracker-extension`
-
-### Step 5 — Connect your GitHub account
-
-1. Click the extension icon in your toolbar
-2. Click "Connect GitHub"
-3. A device code will appear in the popup, e.g. `ABCD-1234`
-4. Click the link shown (or go to [github.com/login/device](https://github.com/login/device))
-5. Enter the code and click "Authorize"
-6. The popup will update to show "Connected to GitHub"
+1. Click the extension icon
+2. Paste the token and click **Save Token** — it's verified against GitHub and the popup shows `Connected as @you`
+3. Under **Destinations**, enter `owner/repo` (or `owner/repo/folder` to save into a subfolder). You can add more than one; every save goes to all of them.
+4. Click **Save Destinations**
 
 ---
 
-## Usage Guide
+## Usage
 
-Once connected, the extension works automatically in the background — no extra steps needed.
-
-### Solving a problem
-
-1. Open any supported platform (e.g. LeetCode, HackerRank)
-2. Navigate to a SQL problem
-3. Write and submit your solution
-4. When your answer is accepted, you'll see a green toast notification:
-   ```
-   ✓ Saved to GitHub: employees-earning-more-than-their-managers
-   ```
-5. The solution is pushed to your `sql-practice-solutions` GitHub repo
-
-### Viewing your saves
-
-Click the extension icon at any time to see:
-- Your connection status
-- All active platforms
-- A list of your recent saves (last 50) with platform and date
-
-### Your GitHub repo
-
-The extension automatically creates a public repo called `sql-practice-solutions` on your account the first time you save a solution. Solutions are organized like this:
+Solve a SQL problem and submit it. When it's accepted you'll see a toast:
 
 ```
-sql-practice-solutions/
+✓ Saved to GitHub: employees-earning-more-than-their-managers
+```
+
+- Re-submitting identical SQL doesn't create a new commit (`✓ Already saved (no changes)`).
+- Submitting a different accepted solution updates the file (`Update: leetcode/<problem>` commit).
+- The popup lists your 10 most recent saves.
+
+### Repo layout
+
+```
+<your-repo>/[folder/]
 ├── leetcode/
-│   ├── employees-earning-more-than-their-managers.sql
-│   └── second-highest-salary.sql
-├── hackerrank/
-│   └── weather-observation-station-5.sql
-├── sqlzoo/
-│   └── select-basics.sql
-└── stratascratch/
-    └── find-the-top-10-ranked-songs.sql
+│   └── employees-earning-more-than-their-managers.sql
+└── hackerrank/
+    └── weather-observation-station-5.sql
 ```
 
-### Saved file format
-
-Each `.sql` file includes a metadata header:
+### File format
 
 ```sql
 -- Problem : employees-earning-more-than-their-managers
 -- Platform: leetcode
 -- URL     : https://leetcode.com/problems/employees-earning-more-than-their-managers/
--- Solved  : 2024-05-01T14:32:00.000Z
--- 
+-- Solved  : 2026-05-01T14:32:00.000Z
+-- ----
 
-SELECT e1.Name AS Employee
+SELECT e1.name AS Employee
 FROM Employee e1
-JOIN Employee e2 ON e1.ManagerId = e2.Id
-WHERE e1.Salary > e2.Salary;
+JOIN Employee e2 ON e1.managerId = e2.id
+WHERE e1.salary > e2.salary;
 ```
-
-### Disconnecting
-
-Click the extension icon and click "Disconnect" to remove your GitHub token from the extension. Your saved solutions in GitHub are not affected.
 
 ---
 
 ## Troubleshooting
 
-**"Proxy server is not running"**
-Start the proxy: `node proxy/server.js`
+The error toast tells you what went wrong:
 
-**"GitHub token expired. Please reconnect"**
-Click "Connect GitHub" again to re-authenticate.
+| Message | Fix |
+|---|---|
+| `Not connected` | Add a token in the popup |
+| `No destination repo set` | Add `owner/repo` under Destinations |
+| `GitHub token is invalid or expired` | Create a new token and save it again |
+| `Repo … not found, or token can't access it` | Check the repo name, and that the fine-grained token includes that repo |
+| `No write access` | Token needs **Contents: Read and write** |
 
-**Toast shows "Failed to save"**
-- Check that the proxy server is still running
-- Check that your GitHub token hasn't expired (disconnect and reconnect)
-- Open the browser console on the background service worker (`chrome://extensions` → "Inspect views: service worker") for detailed error logs
+**Nothing happens after an accepted submission:** open DevTools on the problem page and look for `[SQL Tracker]` messages in the console. For background errors: `chrome://extensions` → SQL Practice Tracker → *Inspect views: service worker*.
 
-**Solution not detected on a platform**
-Some platforms update their UI frequently. If the auto-detection stops working, open a GitHub issue with the platform name and the current URL pattern.
+## How it works
 
-**Firefox: extension stops working after browser restart**
-Firefox only supports temporary add-ons in developer mode — they're removed on restart. You'll need to reload it each session via `about:debugging`.
+- `content/page-bridge.js` runs in the page's main world (`"world": "MAIN"`) so it can read the Monaco/CodeMirror editor and, on LeetCode, observe the submit/check requests.
+- `content/leetcode.js` / `content/hackerrank.js` detect an accepted solution and send it to the background worker.
+- `background.js` writes the file with the GitHub Contents API, skipping the write when the SQL hasn't changed.

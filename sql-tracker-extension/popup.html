@@ -2,54 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SQL Tracker</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      width: 280px;
+      width: 320px;
       padding: 16px;
       background: #0d1117;
       color: #e6edf3;
     }
     h1 { font-size: 15px; margin-bottom: 12px; color: #58a6ff; }
-    .status { font-size: 13px; margin-bottom: 12px; color: #8b949e; }
+    .status { font-size: 13px; margin-bottom: 10px; color: #8b949e; }
     .status span { color: #3fb950; font-weight: 600; }
     .status span.error { color: #f85149; }
-    button {
-      width: 100%;
-      padding: 8px;
-      border: none;
-      border-radius: 6px;
-      font-size: 13px;
-      cursor: pointer;
-      margin-top: 8px;
-    }
-    #btn-auth { background: #238636; color: #fff; }
-    #btn-logout { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-    #auth-steps {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 12px;
-      margin-top: 12px;
-      font-size: 12px;
-      line-height: 1.6;
-      display: none;
-    }
-    #auth-steps a { color: #58a6ff; }
-    #user-code {
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: 3px;
-      color: #f0f6fc;
-      margin: 8px 0;
-      text-align: center;
-    }
-    .settings { margin-top: 12px; }
-    .settings label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 3px; }
-    .settings input {
+    label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 3px; margin-top: 8px; }
+    input {
       width: 100%;
       padding: 6px 8px;
       background: #161b22;
@@ -57,38 +25,89 @@
       border-radius: 6px;
       color: #e6edf3;
       font-size: 12px;
-      margin-bottom: 8px;
     }
-    .settings input:focus { outline: none; border-color: #58a6ff; }
-    #btn-save-settings { background: #1f6feb; color: #fff; margin-top: 0; }
-    #settings-saved { font-size: 11px; color: #3fb950; text-align: center; display: none; margin-top: 4px; }
+    input:focus { outline: none; border-color: #58a6ff; }
+    button {
+      width: 100%;
+      padding: 7px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    #btn-save-token { background: #238636; color: #fff; }
+    #btn-logout { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .divider { border-top: 1px solid #21262d; margin: 12px 0; }
+    .hint { font-size: 11px; color: #8b949e; margin-top: 4px; }
+    .hint a { color: #58a6ff; }
+
+    /* Destinations */
+    #destinations { margin-top: 4px; }
+    .dest-row {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .dest-row input { flex: 1; }
+    .dest-row button {
+      width: 28px;
+      padding: 5px;
+      margin: 0;
+      background: #21262d;
+      color: #f85149;
+      border: 1px solid #30363d;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    #btn-add-dest {
+      background: #161b22;
+      color: #58a6ff;
+      border: 1px dashed #30363d;
+      margin-top: 2px;
+    }
+    #btn-save-dests { background: #1f6feb; color: #fff; }
+    #saved-msg { font-size: 11px; color: #3fb950; text-align: center; margin-top: 4px; display: none; }
+    #saved-msg.error { color: #f85149; }
+    .dest-row input.invalid { border-color: #f85149; }
+
+    /* History */
+    #history { list-style: none; margin-top: 4px; max-height: 160px; overflow-y: auto; }
+    #history li { font-size: 12px; padding: 5px 0; border-bottom: 1px solid #21262d; display: flex; justify-content: space-between; gap: 8px; }
+    #history li a { color: #e6edf3; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #history li a:hover { color: #58a6ff; }
+    #history li .meta { color: #8b949e; flex-shrink: 0; }
+    #history .empty { color: #8b949e; }
   </style>
 </head>
 <body>
   <h1>🗄 SQL Practice Tracker</h1>
   <div class="status" id="status">Checking...</div>
 
-  <div id="auth-steps">
-    <p>1. Go to <a id="verify-link" href="#" target="_blank">github.com/login/device</a></p>
-    <p>2. Enter this code:</p>
-    <div id="user-code"></div>
-    <p>3. Authorize on your phone or browser</p>
-    <p style="color:#8b949e; margin-top:8px;">Waiting for authorization...</p>
+  <div id="section-token">
+    <label>GitHub Personal Access Token</label>
+    <input id="input-token" type="password" placeholder="ghp_xxxxxxxxxxxx" />
+    <p class="hint">Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank">fine-grained token</a> limited to your solutions repo, with <strong>Contents: Read and write</strong> permission.</p>
+    <button id="btn-save-token">Save Token</button>
   </div>
 
-  <button id="btn-auth">Connect GitHub</button>
-  <button id="btn-logout" style="display:none">Disconnect</button>
-
-  <div class="settings">
-    <label>GitHub Username</label>
-    <input id="input-owner" type="text" placeholder="e.g. gaurav190901" />
-    <label>Repository Name</label>
-    <input id="input-repo" type="text" placeholder="e.g. sql_extension" />
-    <label>Folder (optional)</label>
-    <input id="input-folder" type="text" placeholder="e.g. solutions (leave blank for root)" />
-    <button id="btn-save-settings">Save Settings</button>
-    <div id="settings-saved">✓ Settings saved</div>
+  <div id="section-connected" style="display:none">
+    <button id="btn-logout">Disconnect</button>
   </div>
+
+  <div class="divider"></div>
+
+  <label>Destinations (owner/repo or owner/repo/folder)</label>
+  <div id="destinations"></div>
+  <button id="btn-add-dest">+ Add destination</button>
+  <button id="btn-save-dests">Save Destinations</button>
+  <div id="saved-msg">✓ Saved</div>
+
+  <div class="divider"></div>
+
+  <label>Recent saves</label>
+  <ul id="history"></ul>
 
   <script src="popup.js"></script>
 </body>

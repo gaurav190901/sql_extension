@@ -1,107 +1,40 @@
-// GitHub OAuth App credentials
-const GITHUB_CLIENT_ID = "Ov23li03666HhyOaM0C5";
-const PROXY = "http://127.0.0.1:9876";
 const MAX_HISTORY = 50;
+const GH_API = "https://api.github.com";
 
-// Default repo settings (overridden by user settings in storage)
-const DEFAULT_OWNER = "gaurav190901";
-const DEFAULT_REPO = "sql_extension";
+// ---------- Storage helpers ----------
 
-async function getRepoSettings() {
-  const data = await chrome.storage.local.get(["repoOwner", "repoName", "repoFolder"]);
-  return {
-    owner: data.repoOwner || DEFAULT_OWNER,
-    repo: data.repoName || DEFAULT_REPO,
-    folder: data.repoFolder || "",
-  };
-}
-
-// --- Proxy health check ---
-
-async function isProxyRunning() {
-  try {
-    const res = await fetch(`${PROXY}/health`, { method: "GET" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// --- GitHub Device Flow Auth ---
-
-async function startDeviceFlow() {
-  const running = await isProxyRunning();
-  if (!running) {
-    throw new Error("Proxy server is not running. Please start it with: node proxy/server.js");
-  }
-  const res = await fetch(`${PROXY}/device/code`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: GITHUB_CLIENT_ID, scope: "repo" }),
-  });
-  return res.json();
-}
-
-async function pollForToken(deviceCode, interval) {
-  return new Promise((resolve, reject) => {
-    let currentInterval = interval * 1000;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${PROXY}/device/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: GITHUB_CLIENT_ID,
-            device_code: deviceCode,
-            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-          }),
-        });
-        const data = await res.json();
-        if (data.access_token) {
-          resolve(data.access_token);
-        } else if (data.error === "slow_down") {
-          currentInterval += 5000;
-          setTimeout(poll, currentInterval);
-        } else if (data.error === "authorization_pending") {
-          setTimeout(poll, currentInterval);
-        } else if (data.error === "access_denied" || data.error === "expired_token") {
-          reject(new Error(data.error));
-        } else {
-          setTimeout(poll, currentInterval);
-        }
-      } catch (e) {
-        console.error("Poll error:", e);
-        setTimeout(poll, currentInterval);
-      }
-    };
-    setTimeout(poll, currentInterval);
-  });
-}
-
-// --- GitHub API helpers ---
-
-async function getAuthHeaders() {
+async function getToken() {
   const { token } = await chrome.storage.local.get("token");
-  if (!token) throw new Error("Not authenticated. Please connect your GitHub account.");
+  if (!token) throw new Error("Not connected. Open the extension popup and add a GitHub token.");
+  return token;
+}
+
+async function getDestinations() {
+  const { destinations } = await chrome.storage.local.get("destinations");
+  const list = (destinations || []).map(parseDestination).filter(Boolean);
+  if (!list.length) throw new Error("No destination repo set. Open the extension popup to add one.");
+  return list;
+}
+
+// "owner/repo" or "owner/repo/sub/folder"
+function parseDestination(str) {
+  const parts = String(str || "").trim().replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  return { owner: parts[0], repo: parts[1], folder: parts.slice(2).join("/"), label: parts.join("/") };
+}
+
+function ghHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
     Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
   };
 }
 
-async function getUsername() {
-  const headers = await getAuthHeaders();
-  const res = await fetch("https://api.github.com/user", { headers });
-  if (res.status === 401) {
-    await chrome.storage.local.remove("token");
-    throw new Error("GitHub token expired. Please reconnect your account.");
-  }
-  const data = await res.json();
-  return data.login;
-}
+// ---------- File content ----------
 
-// --- Build file content with metadata header ---
+const HEADER_END = "-- ----";
 
 function buildFileContent(sql, meta) {
   return [
@@ -109,13 +42,119 @@ function buildFileContent(sql, meta) {
     `-- Platform: ${meta.platform}`,
     `-- URL     : ${meta.url}`,
     `-- Solved  : ${meta.solvedAt}`,
-    `--`,
+    HEADER_END,
     "",
-    sql,
+    sql.replace(/\s+$/, ""),
+    "",
   ].join("\n");
 }
 
-// --- Save to history ---
+// Strip our metadata header (current or legacy "--" terminator) to compare SQL bodies.
+function extractBody(content) {
+  const lines = content.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].startsWith("-- ") && lines[i] !== HEADER_END) i++;
+  if (i < lines.length && (lines[i] === HEADER_END || lines[i].trim() === "--")) i++;
+  return lines.slice(i).join("\n").trim();
+}
+
+function toBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function fromBase64(b64) {
+  const bin = atob(b64.replace(/\n/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+
+function safeFileName(name) {
+  return (
+    String(name)
+      .toLowerCase()
+      .replace(/[^a-z0-9_\-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "unknown-problem"
+  );
+}
+
+function encodePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+async function explainError(res, dest) {
+  let detail = "";
+  try { detail = (await res.json()).message || ""; } catch {}
+  switch (res.status) {
+    case 401: return "GitHub token is invalid or expired. Reconnect in the popup.";
+    case 403: return `No write access to ${dest.label}${detail ? ` (${detail})` : ""}.`;
+    case 404: return `Repo ${dest.owner}/${dest.repo} not found, or token can't access it.`;
+    case 409:
+    case 422: return `GitHub rejected the update (${detail || res.status}). Try again.`;
+    default: return `GitHub error ${res.status}${detail ? `: ${detail}` : ""}`;
+  }
+}
+
+// ---------- Push ----------
+
+async function pushToDestination(dest, token, { platform, problemName, sql, url, solvedAt }) {
+  const headers = ghHeaders(token);
+  const fileName = `${safeFileName(problemName)}.sql`;
+  const filePath = [dest.folder, platform, fileName].filter(Boolean).join("/");
+  const endpoint = `${GH_API}/repos/${dest.owner}/${dest.repo}/contents/${encodePath(filePath)}`;
+
+  let sha;
+  const existing = await fetch(endpoint, { headers });
+  if (existing.ok) {
+    const json = await existing.json();
+    sha = json.sha;
+    if (json.content && extractBody(fromBase64(json.content)) === sql.trim()) {
+      return { unchanged: true, path: filePath };
+    }
+  } else if (existing.status !== 404) {
+    throw new Error(await explainError(existing, dest));
+  }
+
+  const content = buildFileContent(sql, { problemName, platform, url, solvedAt });
+  const res = await fetch(endpoint, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      message: `${sha ? "Update" : "Add"}: ${platform}/${problemName}`,
+      content: toBase64(content),
+      ...(sha && { sha }),
+    }),
+  });
+  if (!res.ok) throw new Error(await explainError(res, dest));
+  return { unchanged: false, path: filePath };
+}
+
+async function pushSolution({ platform, problemName, sql, url }) {
+  if (!sql || !sql.trim()) throw new Error("Empty solution, nothing to save.");
+  const token = await getToken();
+  const destinations = await getDestinations();
+  const solvedAt = new Date().toISOString();
+
+  const results = await Promise.allSettled(
+    destinations.map((d) => pushToDestination(d, token, { platform, problemName, sql, url, solvedAt }))
+  );
+
+  const errors = [];
+  let allUnchanged = true;
+  results.forEach((r, i) => {
+    if (r.status === "rejected") errors.push(`${destinations[i].label}: ${r.reason.message}`);
+    else if (!r.value.unchanged) allUnchanged = false;
+  });
+
+  const okCount = results.length - errors.length;
+  if (okCount > 0 && !allUnchanged) {
+    await addToHistory({ platform, problemName, url, solvedAt, ok: errors.length === 0 });
+  }
+
+  if (errors.length) return { ok: false, error: errors.join(" | ") };
+  return { ok: true, unchanged: allUnchanged };
+}
 
 async function addToHistory(entry) {
   const { saveHistory = [] } = await chrome.storage.local.get("saveHistory");
@@ -124,104 +163,64 @@ async function addToHistory(entry) {
   await chrome.storage.local.set({ saveHistory });
 }
 
-// --- Push solution to GitHub ---
+// ---------- Token ----------
 
-async function pushSolution(platform, problemName, sql, url) {
-  const headers = await getAuthHeaders();
-  const { owner, repo, folder } = await getRepoSettings();
-
-  const solvedAt = new Date().toISOString();
-  const fileContent = buildFileContent(sql, { problemName, platform, url, solvedAt });
-
-  const safeName = problemName.replace(/[^a-z0-9_\-]/gi, "_").toLowerCase();
-  const filePath = folder
-    ? `${folder}/${platform}/${safeName}.sql`
-    : `${platform}/${safeName}.sql`;
-  const encoded = btoa(unescape(encodeURIComponent(fileContent)));
-
-  let sha;
-  const existing = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
-    { headers }
-  );
-  if (existing.ok) {
-    const data = await existing.json();
-    sha = data.sha;
+async function verifyAndSaveToken(token) {
+  const res = await fetch(`${GH_API}/user`, { headers: ghHeaders(token) });
+  if (!res.ok) {
+    throw new Error(res.status === 401 ? "Invalid token." : `GitHub error ${res.status}.`);
   }
-
-  const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
-    {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({
-        message: sha ? `Update: ${problemName}` : `Add: ${problemName}`,
-        content: encoded,
-        ...(sha && { sha }),
-      }),
-    }
-  );
-
-  if (res.ok) {
-    await addToHistory({ platform, problemName, url, solvedAt, path: filePath });
-  }
-
-  return res.ok;
+  const user = await res.json();
+  await chrome.storage.local.set({ token, githubLogin: user.login });
+  return user.login;
 }
 
-// --- Message handler ---
+// ---------- Messaging ----------
+
+function respond(promise, sendResponse) {
+  promise
+    .then((r) => sendResponse(r))
+    .catch((e) => sendResponse({ ok: false, error: e.message }));
+  return true;
+}
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "START_AUTH") {
-    (async () => {
-      try {
-        const device = await startDeviceFlow();
-        await chrome.storage.local.set({ pendingAuth: device });
-        sendResponse({ ok: true, userCode: device.user_code, verificationUri: device.verification_uri });
-        const token = await pollForToken(device.device_code, device.interval || 5);
-        await chrome.storage.local.remove("pendingAuth");
-        await chrome.storage.local.set({ token });
-      } catch (e) {
-        try { sendResponse({ ok: false, error: e.message }); } catch {}
-      }
-    })();
-    return true;
-  }
+  switch (msg.type) {
+    case "SAVE_TOKEN":
+      return respond(
+        verifyAndSaveToken(String(msg.token || "").trim()).then((login) => ({ ok: true, login })),
+        sendResponse
+      );
 
-  if (msg.type === "PUSH_SOLUTION") {
-    (async () => {
-      try {
-        const ok = await pushSolution(msg.platform, msg.problemName, msg.sql, msg.url || "");
-        sendResponse({ ok });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
+    case "PUSH_SOLUTION":
+      return respond(
+        pushSolution({
+          platform: msg.platform,
+          problemName: msg.problemName,
+          sql: msg.sql,
+          url: msg.url || "",
+        }),
+        sendResponse
+      );
 
-  if (msg.type === "GET_AUTH_STATUS") {
-    chrome.storage.local.get(["token", "pendingAuth"], (data) => {
-      sendResponse({ authenticated: !!data.token, pendingAuth: data.pendingAuth || null });
-    });
-    return true;
-  }
+    case "GET_AUTH_STATUS":
+      return respond(
+        chrome.storage.local
+          .get(["token", "githubLogin"])
+          .then((d) => ({ authenticated: !!d.token, login: d.githubLogin || "" })),
+        sendResponse
+      );
 
-  if (msg.type === "GET_HISTORY") {
-    chrome.storage.local.get("saveHistory", (data) => {
-      sendResponse({ history: data.saveHistory || [] });
-    });
-    return true;
-  }
+    case "GET_HISTORY":
+      return respond(
+        chrome.storage.local.get("saveHistory").then((d) => ({ history: d.saveHistory || [] })),
+        sendResponse
+      );
 
-  if (msg.type === "UPDATE_SETTINGS") {
-    // Settings already saved by popup via chrome.storage, nothing extra needed
-    sendResponse({ ok: true });
-    return true;
-  }
-
-  if (msg.type === "LOGOUT") {
-    chrome.storage.local.remove(["token", "pendingAuth"], () => sendResponse({ ok: true }));
-    return true;
+    case "LOGOUT":
+      return respond(
+        chrome.storage.local.remove(["token", "githubLogin"]).then(() => ({ ok: true })),
+        sendResponse
+      );
   }
 });

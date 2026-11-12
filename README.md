@@ -62,6 +62,7 @@ Solve a SQL problem and submit it. When it's accepted you'll see a toast:
 - Re-submitting identical SQL doesn't create a new commit (`✓ Already saved (no changes)`).
 - Submitting a different accepted solution updates the file (`Update: leetcode/<problem>` commit).
 - The popup lists your 10 most recent saves.
+- **↺ Start from beginning** (bottom of the popup) deletes every saved solution from your destination repos in a single `Start over: remove N saved solutions` commit and clears Recent saves. The first click shows how many files will go; click again to confirm. Only `.sql` files directly inside the platform folders (`leetcode/`, `hackerrank/`, …) under each destination are removed. Other files, your token and destinations stay. Since it's a normal commit, you can undo it with `git revert`.
 
 ### Repo layout
 

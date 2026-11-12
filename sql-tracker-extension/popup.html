@@ -79,6 +79,10 @@
     #history li a:hover { color: #58a6ff; }
     #history li .meta { color: #8b949e; flex-shrink: 0; }
     #history .empty { color: #8b949e; }
+
+    /* Reset */
+    #btn-reset { background: transparent; color: #f85149; border: 1px solid #30363d; }
+    #btn-reset.confirm { background: #da3633; color: #fff; border-color: #da3633; }
   </style>
 </head>
 <body>
@@ -108,6 +112,11 @@
 
   <label>Recent saves</label>
   <ul id="history"></ul>
+
+  <div class="divider"></div>
+
+  <button id="btn-reset" title="Delete all saved solutions from your GitHub destinations">↺ Start from beginning</button>
+  <p class="hint" id="reset-hint">Deletes every saved solution (.sql files in the platform folders) from your destination repos in one commit, and clears Recent saves. Your token and destinations stay.</p>
 
   <script src="popup.js"></script>
 </body>

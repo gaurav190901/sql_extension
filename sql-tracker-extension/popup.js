@@ -9,6 +9,7 @@ const btnAddDest = document.getElementById("btn-add-dest");
 const btnSaveDests = document.getElementById("btn-save-dests");
 const savedMsg = document.getElementById("saved-msg");
 const historyEl = document.getElementById("history");
+const btnReset = document.getElementById("btn-reset");
 
 const DEST_RE = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+(\/[^\s]+)*\/?$/;
 
@@ -144,4 +145,56 @@ btnSaveDests.addEventListener("click", () => {
   if (!valid) { flash("Use the format owner/repo or owner/repo/folder", true); return; }
   if (!dests.length) { flash("Add at least one destination", true); return; }
   chrome.storage.local.set({ destinations: dests }, () => flash("✓ Saved"));
+});
+
+// Two-step: first click counts the files on GitHub, second click (within 6s) deletes them.
+const RESET_LABEL = "↺ Start from beginning";
+const resetHint = document.getElementById("reset-hint");
+const resetHintText = resetHint.textContent;
+let resetTimer = null;
+
+function disarmReset(label = RESET_LABEL) {
+  clearTimeout(resetTimer);
+  btnReset.classList.remove("confirm");
+  btnReset.disabled = false;
+  btnReset.textContent = label;
+}
+
+// No response at all = background script didn't handle the message (usually it's an old version).
+function noReplyError() {
+  const why = chrome.runtime.lastError?.message || "no response";
+  return `Extension background didn't answer (${why}). Reload the extension in chrome://extensions and try again.`;
+}
+
+function setResetHint(text, isError = false) {
+  resetHint.textContent = text;
+  resetHint.style.color = isError ? "#f85149" : "";
+}
+
+btnReset.addEventListener("click", () => {
+  btnReset.disabled = true;
+
+  if (!btnReset.classList.contains("confirm")) {
+    btnReset.textContent = "Checking GitHub…";
+    chrome.runtime.sendMessage({ type: "COUNT_SOLUTIONS" }, (res) => {
+      if (!res?.ok) { disarmReset(); setResetHint(res?.error || noReplyError(), true); return; }
+      if (!res.count) { disarmReset(); setResetHint("Nothing to delete. Your repos have no saved solutions."); return; }
+      btnReset.disabled = false;
+      btnReset.classList.add("confirm");
+      const repos = res.repos === 1 ? "1 repo" : `${res.repos} repos`;
+      btnReset.textContent = `Delete ${res.count} file${res.count === 1 ? "" : "s"} from ${repos}? Click again`;
+      resetTimer = setTimeout(() => disarmReset(), 6000);
+    });
+    return;
+  }
+
+  clearTimeout(resetTimer);
+  btnReset.textContent = "Deleting…";
+  chrome.runtime.sendMessage({ type: "DELETE_ALL_SOLUTIONS" }, (res) => {
+    disarmReset();
+    if (!res?.ok) { setResetHint(res?.error || noReplyError(), true); return; }
+    setResetHint(`✓ Deleted ${res.count} file${res.count === 1 ? "" : "s"}. Starting fresh.`);
+    setTimeout(() => setResetHint(resetHintText), 5000);
+    renderHistory([]);
+  });
 });

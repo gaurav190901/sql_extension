@@ -163,6 +163,89 @@ async function addToHistory(entry) {
   await chrome.storage.local.set({ saveHistory });
 }
 
+// ---------- Delete all solutions ----------
+
+// Folder names the content scripts save into (see PLATFORM in content/*.js).
+const PLATFORM_DIRS = ["leetcode", "hackerrank", "sqlzoo", "sql-practice", "stratascratch", "db-fiddle", "sqlfiddle"];
+
+async function ghJson(url, token, dest, init = {}) {
+  const res = await fetch(url, { ...init, headers: ghHeaders(token) });
+  if (!res.ok) throw new Error(await explainError(res, dest));
+  return res.json();
+}
+
+// Finds `<folder>/<platform>/*.sql` files in a destination's default branch.
+async function findSolutionFiles(dest, token) {
+  const base = `${GH_API}/repos/${dest.owner}/${dest.repo}`;
+  const repo = await ghJson(base, token, dest);
+  const branch = repo.default_branch;
+
+  const refRes = await fetch(`${base}/git/ref/heads/${encodePath(branch)}`, { headers: ghHeaders(token) });
+  if (refRes.status === 404 || refRes.status === 409) return { base, branch, files: [] }; // empty repo
+  if (!refRes.ok) throw new Error(await explainError(refRes, dest));
+  const headSha = (await refRes.json()).object.sha;
+
+  const commit = await ghJson(`${base}/git/commits/${headSha}`, token, dest);
+  const tree = await ghJson(`${base}/git/trees/${commit.tree.sha}?recursive=1`, token, dest);
+  if (tree.truncated) throw new Error(`${dest.label} is too large to scan in one request.`);
+
+  const prefix = dest.folder ? `${dest.folder.replace(/\/+$/, "")}/` : "";
+  const files = tree.tree
+    .filter((e) => e.type === "blob" && e.path.startsWith(prefix))
+    .map((e) => e.path)
+    .filter((p) => {
+      const rest = p.slice(prefix.length).split("/");
+      return rest.length === 2 && PLATFORM_DIRS.includes(rest[0]) && rest[1].endsWith(".sql");
+    });
+
+  return { base, branch, headSha, treeSha: commit.tree.sha, files };
+}
+
+async function deleteSolutionsIn(dest, token, dryRun) {
+  const found = await findSolutionFiles(dest, token);
+  if (dryRun || !found.files.length) return found.files.length;
+
+  const { base, branch, headSha, treeSha, files } = found;
+  const newTree = await ghJson(`${base}/git/trees`, token, dest, {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: treeSha,
+      tree: files.map((path) => ({ path, mode: "100644", type: "blob", sha: null })),
+    }),
+  });
+  const newCommit = await ghJson(`${base}/git/commits`, token, dest, {
+    method: "POST",
+    body: JSON.stringify({
+      message: `Start over: remove ${files.length} saved solution${files.length === 1 ? "" : "s"}`,
+      tree: newTree.sha,
+      parents: [headSha],
+    }),
+  });
+  await ghJson(`${base}/git/refs/heads/${encodePath(branch)}`, token, dest, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: newCommit.sha }),
+  });
+  return files.length;
+}
+
+// dryRun: only count. Otherwise delete from every destination and clear local history.
+async function deleteAllSolutions(dryRun) {
+  const token = await getToken();
+  const destinations = await getDestinations();
+  const results = await Promise.allSettled(destinations.map((d) => deleteSolutionsIn(d, token, dryRun)));
+
+  let total = 0;
+  const errors = [];
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") total += r.value;
+    else errors.push(`${destinations[i].label}: ${r.reason.message}`);
+  });
+
+  if (!dryRun && !errors.length) await chrome.storage.local.remove("saveHistory");
+  if (errors.length) return { ok: false, count: total, error: errors.join(" | ") };
+  return { ok: true, count: total, repos: destinations.length };
+}
+
 // ---------- Token ----------
 
 async function verifyAndSaveToken(token) {
@@ -216,6 +299,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         chrome.storage.local.get("saveHistory").then((d) => ({ history: d.saveHistory || [] })),
         sendResponse
       );
+
+    case "COUNT_SOLUTIONS":
+      return respond(deleteAllSolutions(true), sendResponse);
+
+    case "DELETE_ALL_SOLUTIONS":
+      return respond(deleteAllSolutions(false), sendResponse);
 
     case "LOGOUT":
       return respond(
